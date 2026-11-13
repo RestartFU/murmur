@@ -1,6 +1,5 @@
 package com.restartfu.murmur.overlay
 
-import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
@@ -10,7 +9,7 @@ import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Shader
 import android.view.View
-import android.view.animation.LinearInterpolator
+import android.os.SystemClock
 import androidx.core.graphics.withSave
 import kotlin.math.PI
 import kotlin.math.min
@@ -22,9 +21,12 @@ import kotlin.math.sin
  *
  * - idle: the mark at rest, lavender on dark;
  * - recording: red, and the quieter arches rise and brighten as you speak;
- * - transcribing: a ripple runs through the arches.
+ * - transcribing: a lavender ring circles the button and a wave runs through the arches.
  *
- * Drawn by hand so the overlay needs no theme or inflation.
+ * Drawn by hand so the overlay needs no theme or inflation. The transcribing animation is
+ * driven by the frame clock rather than an Animator. Animators freeze when the system's
+ * animation scale is 0 ("Remove animations", battery saver), and this one is the only sign
+ * that Murmur is working.
  */
 @SuppressLint("ViewConstructor")
 class MicButtonView(context: Context) : View(context) {
@@ -46,6 +48,11 @@ class MicButtonView(context: Context) : View(context) {
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
+    private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = dp(3f)
+        strokeCap = Paint.Cap.ROUND
+    }
     private val path = Path()
     private val oval = RectF()
     private val heights = FloatArray(MurmurMark.arches.size)
@@ -55,7 +62,7 @@ class MicButtonView(context: Context) : View(context) {
             if (field == value) return
             field = value
             level = 0f
-            if (value == State.TRANSCRIBING) ripple.start() else ripple.cancel()
+            if (value == State.TRANSCRIBING) transcribingSince = SystemClock.uptimeMillis()
             contentDescription = when (value) {
                 State.IDLE -> "Start dictation"
                 State.RECORDING -> "Stop dictation"
@@ -65,13 +72,7 @@ class MicButtonView(context: Context) : View(context) {
         }
 
     private var level = 0f
-    private var phase = 0f
-    private val ripple = ValueAnimator.ofFloat(0f, (2 * PI).toFloat()).apply {
-        duration = 1100
-        repeatCount = ValueAnimator.INFINITE
-        interpolator = LinearInterpolator()
-        addUpdateListener { phase = it.animatedValue as Float; invalidate() }
-    }
+    private var transcribingSince = 0L
 
     init {
         contentDescription = "Start dictation"
@@ -97,19 +98,43 @@ class MicButtonView(context: Context) : View(context) {
             canvas.drawCircle(cx, cy, buttonRadius + dp(3f) + level * (haloMax - dp(3f)), halo)
         }
 
-        fill.color = if (state == State.RECORDING) 0xFFE5484D.toInt() else 0xF01C1924.toInt()
+        fill.color = when (state) {
+            State.IDLE -> 0xF01C1924.toInt()
+            State.RECORDING -> 0xFFE5484D.toInt()
+            State.TRANSCRIBING -> 0xF8352B52.toInt()
+        }
         canvas.drawCircle(cx, cy, buttonRadius, fill)
+
+        // 0..1 through one ring revolution.
+        val t = if (state == State.TRANSCRIBING) {
+            ((SystemClock.uptimeMillis() - transcribingSince) % RING_PERIOD_MS) / RING_PERIOD_MS.toFloat()
+        } else 0f
+        val phase = (t * 2 * PI).toFloat()
+        if (state == State.TRANSCRIBING) {
+            val r = buttonRadius + dp(5f)
+            oval.set(cx - r, cy - r, cx + r, cy + r)
+            ring.color = 0x40C9B8FF
+            canvas.drawCircle(cx, cy, r, ring)
+            ring.color = MurmurMark.COLOR
+            // The arc breathes between short and long while it circles.
+            val sweep = 70f + 90f * (0.5f + 0.5f * sin(phase))
+            canvas.drawArc(oval, t * 360f - 90f, sweep, false, ring)
+        }
 
         val tallest = MurmurMark.arches[0].height
         MurmurMark.arches.forEachIndexed { i, arch ->
             heights[i] = when (state) {
                 State.IDLE -> arch.height
                 State.RECORDING -> arch.height + (tallest - arch.height) * level
-                State.TRANSCRIBING -> arch.height * (1f + 0.3f * sin(phase - i * 1.1f))
+                State.TRANSCRIBING -> arch.height * (1f + 0.45f * sin(2 * phase - i * 1.1f))
             }
         }
         val color = if (state == State.RECORDING) 0xFFFFFFFF.toInt() else MurmurMark.COLOR
-        val fade = if (state == State.RECORDING) MurmurMark.FADE + (1f - MurmurMark.FADE) * level else MurmurMark.FADE
+        val fade = when (state) {
+            State.IDLE -> MurmurMark.FADE
+            State.RECORDING -> MurmurMark.FADE + (1f - MurmurMark.FADE) * level
+            State.TRANSCRIBING -> 0.8f
+        }
         mark.shader = MurmurMark.gradient(color, fade)
 
         val scale = dp(19f) / MurmurMark.WIDTH
@@ -120,11 +145,12 @@ class MicButtonView(context: Context) : View(context) {
             MurmurMark.buildPath(path, oval, heights)
             drawPath(path, mark)
         }
+
+        if (state == State.TRANSCRIBING) postInvalidateOnAnimation()
     }
 
-    override fun onDetachedFromWindow() {
-        ripple.cancel()
-        super.onDetachedFromWindow()
+    private companion object {
+        const val RING_PERIOD_MS = 1200L
     }
 }
 

@@ -10,6 +10,7 @@ import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.view.HapticFeedbackConstants
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
@@ -139,7 +140,11 @@ class MurmurAccessibilityService : AccessibilityService() {
         scope.launch {
             try {
                 val text = Transcriber.transcribe(applicationContext, recording.samples)
-                if (text.isNotBlank()) {
+                if (text.isBlank()) {
+                    haptic(HapticFeedbackConstants.REJECT)
+                    toast("Didn't catch that. Try again a little closer to the mic.")
+                } else {
+                    haptic(HapticFeedbackConstants.CONFIRM)
                     when (TextInserter.insert(this@MurmurAccessibilityService, text)) {
                         TextInserter.Result.INSERTED, TextInserter.Result.PASTED -> Unit
                         TextInserter.Result.COPIED_ONLY -> toast("Copied to clipboard. This field doesn't accept text from Murmur.")
@@ -148,6 +153,7 @@ class MurmurAccessibilityService : AccessibilityService() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                haptic(HapticFeedbackConstants.REJECT)
                 toast("Transcription failed: ${e.message}")
             } finally {
                 setState(State.IDLE)
@@ -186,6 +192,10 @@ class MurmurAccessibilityService : AccessibilityService() {
 
     private fun openApp() {
         startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    private fun haptic(feedback: Int) {
+        overlay.button.performHapticFeedback(feedback)
     }
 
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
