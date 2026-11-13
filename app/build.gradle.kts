@@ -62,11 +62,26 @@ android {
         applicationId = "com.restartfu.murmur"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // The release workflow passes these; local builds get a dev version.
+        versionCode = providers.gradleProperty("murmur.versionCode").orNull?.toInt() ?: 1
+        versionName = providers.gradleProperty("murmur.versionName").orNull ?: "0.0.0-dev"
 
         // Phones are arm64. Debug builds also carry x86_64 for the emulator.
         ndk { abiFilters += "arm64-v8a" }
+    }
+
+    // Release signing comes from the environment (set by the release workflow). Without it,
+    // release builds fall back to the debug key so they are still installable locally.
+    val releaseKeystore = providers.environmentVariable("MURMUR_KEYSTORE_FILE").orNull
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = providers.environmentVariable("MURMUR_KEYSTORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("MURMUR_KEY_ALIAS").get()
+                keyPassword = providers.environmentVariable("MURMUR_KEY_PASSWORD").get()
+            }
+        }
     }
 
     buildTypes {
@@ -77,9 +92,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Signed with the debug key so `assembleRelease` produces an installable APK.
-            // Swap in a real signing config before publishing.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 

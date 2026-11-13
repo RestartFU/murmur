@@ -30,6 +30,22 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 The build downloads the sherpa-onnx AAR (v2.0.1) from its GitHub release on first run and checks it against a pinned SHA-256. See `app/build.gradle.kts`. Release APKs ship `arm64-v8a` native libraries only; debug APKs add `x86_64` for the emulator.
 
+## Releasing
+
+Releases are cut from **Actions → Release → Run workflow**. Pick a version bump and a channel:
+
+| Channel | Tag | GitHub release |
+| --- | --- | --- |
+| `stable` | `v1.3.0` | Marked as latest. Main branch only. |
+| `beta` | `v1.3.0-beta.2` | Pre-release. The number counts up for each beta of the same version. |
+| `nightly` | `v1.3.0-nightly.20261113.abc1234` | Pre-release. Only the 7 newest are kept. |
+
+The bump (`patch`, `minor` or `major`) applies to the latest stable tag, so betas and nightlies preview the next stable version. The first `minor` stable release is `v0.1.0`. Locally, `scripts/next-version.sh minor beta` prints the tag a run would create.
+
+Each run tests and builds a minified release APK, signs it, and attaches it to the release with a SHA-256 checksum. The release notes are generated from the merged PRs. The `versionCode` comes from the workflow run number, so any release installs over any earlier one, whatever the channel.
+
+Signing uses these repository secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Keep a backup of the keystore. Android only installs an update if it is signed with the same key as the installed app.
+
 ## Setup on the phone
 
 1. Open Murmur and allow the microphone.
