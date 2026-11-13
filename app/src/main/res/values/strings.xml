@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Murmur</string>
+    <string name="accessibility_summary">Shows a mic button above your keyboard and types what you say.</string>
+    <string name="accessibility_description">Murmur uses this service to detect when a keyboard is on screen, show a microphone button above it, and insert your transcribed speech into the text field you are typing in. Speech is recognised entirely on your device. Murmur does not read, store, or send the contents of your screen or the text you type.</string>
+</resources>
