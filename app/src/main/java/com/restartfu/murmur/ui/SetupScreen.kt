@@ -75,6 +75,38 @@ fun SetupScreen() {
         }
     }
 
+    SetupContent(
+        micGranted = micGranted,
+        serviceEnabled = serviceEnabled,
+        model = model,
+        actions = SetupActions(
+            allowMic = { micPermission.launch(Manifest.permission.RECORD_AUDIO) },
+            openAccessibilitySettings = {
+                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            },
+            downloadModel = { ModelManager.download(context) },
+            cancelDownload = { ModelManager.cancel(context) },
+            deleteModel = { ModelManager.delete(context) },
+        ),
+    )
+}
+
+class SetupActions(
+    val allowMic: () -> Unit = {},
+    val openAccessibilitySettings: () -> Unit = {},
+    val downloadModel: () -> Unit = {},
+    val cancelDownload: () -> Unit = {},
+    val deleteModel: () -> Unit = {},
+)
+
+/** The setup screen without any system wiring, so every state can be previewed. */
+@Composable
+fun SetupContent(
+    micGranted: Boolean,
+    serviceEnabled: Boolean,
+    model: ModelManager.State,
+    actions: SetupActions,
+) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
             Modifier
@@ -95,14 +127,14 @@ fun SetupScreen() {
             Step(1, "Microphone", done = micGranted) {
                 Text("Murmur only listens while the mic button is red.")
                 if (!micGranted) {
-                    Button(onClick = { micPermission.launch(Manifest.permission.RECORD_AUDIO) }) {
+                    Button(onClick = actions.allowMic) {
                         Text("Allow microphone")
                     }
                 }
             }
 
             Step(2, "Speech model", done = model is ModelManager.State.Installed) {
-                ModelStep(model)
+                ModelStep(model, actions)
             }
 
             Step(3, "Show the mic above your keyboard", done = serviceEnabled) {
@@ -113,9 +145,7 @@ fun SetupScreen() {
                         "nothing leaves your phone.",
                 )
                 if (!serviceEnabled) {
-                    Button(onClick = {
-                        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                    }) { Text("Open accessibility settings") }
+                    Button(onClick = actions.openAccessibilitySettings) { Text("Open accessibility settings") }
                     Text(
                         "Find Murmur under Downloaded apps and switch it on. If the switch is greyed out, " +
                             "go to App info → ⋮ → Allow restricted settings, then try again.",
@@ -148,18 +178,17 @@ fun SetupScreen() {
 }
 
 @Composable
-private fun ModelStep(model: ModelManager.State) {
-    val context = LocalContext.current
+private fun ModelStep(model: ModelManager.State, actions: SetupActions) {
     when (model) {
         ModelManager.State.NotInstalled -> {
             Text("${ModelManager.DISPLAY_NAME}. A one-time ${mb(ModelManager.ARCHIVE_SIZE)} download; Wi-Fi recommended.")
-            Button(onClick = { ModelManager.download(context) }) { Text("Download") }
+            Button(onClick = actions.downloadModel) { Text("Download") }
         }
         is ModelManager.State.Downloading -> {
             val fraction = if (model.total > 0) model.downloaded.toFloat() / model.total else 0f
             Text("Downloading… ${mb(model.downloaded)} of ${mb(model.total)}")
             LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
-            OutlinedButton(onClick = { ModelManager.cancel(context) }) { Text("Cancel") }
+            OutlinedButton(onClick = actions.cancelDownload) { Text("Cancel") }
         }
         is ModelManager.State.Installing -> {
             Text("Verifying and unpacking…")
@@ -167,11 +196,11 @@ private fun ModelStep(model: ModelManager.State) {
         }
         ModelManager.State.Installed -> {
             Text("${ModelManager.DISPLAY_NAME} is ready.")
-            TextButton(onClick = { ModelManager.delete(context) }) { Text("Delete model") }
+            TextButton(onClick = actions.deleteModel) { Text("Delete model") }
         }
         is ModelManager.State.Failed -> {
             Text(model.message, color = MaterialTheme.colorScheme.error)
-            Button(onClick = { ModelManager.download(context) }) { Text("Try again") }
+            Button(onClick = actions.downloadModel) { Text("Try again") }
         }
     }
 }

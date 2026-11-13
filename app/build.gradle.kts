@@ -105,6 +105,20 @@ android {
         compose = true
     }
 
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            all {
+                // `./gradlew testDebugUnitTest -Pscreenshots` renders docs/screenshots/*.png.
+                if (providers.gradleProperty("screenshots").isPresent) {
+                    it.systemProperty("roborazzi.test.record", "true")
+                } else {
+                    it.exclude("**/screenshots/**")
+                }
+            }
+        }
+    }
+
     packaging {
         jniLibs.useLegacyPackaging = false
     }
@@ -126,5 +140,13 @@ dependencies {
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
+
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(libs.androidx.test.ext.junit)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
 }

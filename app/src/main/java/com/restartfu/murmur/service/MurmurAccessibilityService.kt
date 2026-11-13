@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.Toast
 import com.restartfu.murmur.MainActivity
@@ -54,7 +55,8 @@ class MurmurAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOWS_CHANGED,
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> updateKeyboard()
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+            AccessibilityEvent.TYPE_VIEW_FOCUSED -> updateKeyboard()
         }
     }
 
@@ -68,7 +70,10 @@ class MurmurAccessibilityService : AccessibilityService() {
             ?.takeIf { it.height() > 0 }
 
         if (bounds != null) {
-            overlay.showAbove(bounds)
+            val field = rootInActiveWindow
+                ?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                ?.let { node -> Rect().also(node::getBoundsInScreen) }
+            overlay.showAbove(bounds, field)
             if (!keyboardVisible) onKeyboardShown()
             keyboardVisible = true
         } else {

@@ -53,8 +53,12 @@ class OverlayController(
 
     val isShowing get() = attached
 
-    /** Shows (or moves) the button so it sits just above [keyboardBounds]. */
-    fun showAbove(keyboardBounds: Rect) {
+    /**
+     * Shows (or moves) the button above the keyboard. If the focused text field sits
+     * directly on the keyboard, as in most chat apps, the button goes above the field
+     * instead, so it doesn't cover the app's send button.
+     */
+    fun showAbove(keyboardBounds: Rect, focusedField: Rect?) {
         val size = button.measuredWidth.takeIf { it > 0 } ?: run {
             button.measure(0, 0)
             button.measuredWidth
@@ -62,7 +66,14 @@ class OverlayController(
         val screenWidth = wm.currentWindowMetrics.bounds.width()
         val right = prefs.getInt(KEY_RIGHT_MARGIN, defaultRightMargin)
         val x = (screenWidth - size - right).coerceIn(0, (screenWidth - size).coerceAtLeast(0))
-        val y = (keyboardBounds.top - size - gap).coerceAtLeast(0)
+        val y = dockY(
+            keyboardTop = keyboardBounds.top,
+            fieldTop = focusedField?.top,
+            fieldBottom = focusedField?.bottom,
+            buttonSize = size,
+            gap = gap,
+            density = density,
+        )
         if (attached && params.x == x && params.y == y) return
         params.x = x
         params.y = y
@@ -122,7 +133,31 @@ class OverlayController(
         }
     }
 
-    private companion object {
-        const val KEY_RIGHT_MARGIN = "right_margin"
+    companion object {
+        private const val KEY_RIGHT_MARGIN = "right_margin"
+
+        /** How far above the keyboard a field may end and still count as "sitting on" it. */
+        private const val FIELD_NEAR_KEYBOARD_DP = 96
+        /** Taller fields (an email body, a notes page) keep the button on the keyboard. */
+        private const val FIELD_MAX_HEIGHT_DP = 160
+
+        /** The top edge of the button window, in screen pixels. */
+        internal fun dockY(
+            keyboardTop: Int,
+            fieldTop: Int?,
+            fieldBottom: Int?,
+            buttonSize: Int,
+            gap: Int,
+            density: Float,
+        ): Int {
+            var anchor = keyboardTop
+            if (fieldTop != null && fieldBottom != null) {
+                val sitsOnKeyboard = fieldBottom <= keyboardTop + gap &&
+                    keyboardTop - fieldBottom <= FIELD_NEAR_KEYBOARD_DP * density
+                val compact = fieldBottom - fieldTop <= FIELD_MAX_HEIGHT_DP * density
+                if (sitsOnKeyboard && compact) anchor = minOf(anchor, fieldTop)
+            }
+            return (anchor - buttonSize - gap).coerceAtLeast(0)
+        }
     }
 }
