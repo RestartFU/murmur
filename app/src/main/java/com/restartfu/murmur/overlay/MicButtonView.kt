@@ -4,13 +4,28 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
+import android.graphics.Shader
 import android.view.View
 import android.view.animation.LinearInterpolator
+import androidx.core.graphics.withSave
+import kotlin.math.PI
 import kotlin.math.min
+import kotlin.math.sin
 
-/** The floating mic button. Drawn by hand so the overlay needs no theme or inflation. */
+/**
+ * The floating dictation button, showing the Murmur mark: a lowercase "m" whose arches
+ * fade from left to right. The mark reacts to the state:
+ *
+ * - idle: the mark at rest, lavender on dark;
+ * - recording: red, and the quieter arches rise and brighten as you speak;
+ * - transcribing: a ripple runs through the arches.
+ *
+ * Drawn by hand so the overlay needs no theme or inflation.
+ */
 @SuppressLint("ViewConstructor")
 class MicButtonView(context: Context) : View(context) {
 
@@ -25,27 +40,22 @@ class MicButtonView(context: Context) : View(context) {
 
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val halo = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val glyph = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt() }
-    private val glyphStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFFFFFFF.toInt()
+    private val mark = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = dp(1.8f)
+        strokeWidth = MurmurMark.STROKE
         strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
     }
-    private val spinner = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFC9B8FF.toInt()
-        style = Paint.Style.STROKE
-        strokeWidth = dp(2.5f)
-        strokeCap = Paint.Cap.ROUND
-    }
-    private val rect = RectF()
+    private val path = Path()
+    private val oval = RectF()
+    private val heights = FloatArray(MurmurMark.arches.size)
 
     var state = State.IDLE
         set(value) {
             if (field == value) return
             field = value
             level = 0f
-            if (value == State.TRANSCRIBING) spin.start() else spin.cancel()
+            if (value == State.TRANSCRIBING) ripple.start() else ripple.cancel()
             contentDescription = when (value) {
                 State.IDLE -> "Start dictation"
                 State.RECORDING -> "Stop dictation"
@@ -55,12 +65,12 @@ class MicButtonView(context: Context) : View(context) {
         }
 
     private var level = 0f
-    private var angle = 0f
-    private val spin = ValueAnimator.ofFloat(0f, 360f).apply {
-        duration = 900
+    private var phase = 0f
+    private val ripple = ValueAnimator.ofFloat(0f, (2 * PI).toFloat()).apply {
+        duration = 1100
         repeatCount = ValueAnimator.INFINITE
         interpolator = LinearInterpolator()
-        addUpdateListener { angle = it.animatedValue as Float; invalidate() }
+        addUpdateListener { phase = it.animatedValue as Float; invalidate() }
     }
 
     init {
@@ -68,7 +78,7 @@ class MicButtonView(context: Context) : View(context) {
         isClickable = true
     }
 
-    /** Feeds a microphone RMS level (0..1); smoothed so the halo breathes rather than flickers. */
+    /** Feeds a microphone RMS level (0..1); smoothed so the mark breathes rather than flickers. */
     fun setLevel(rms: Float) {
         val target = min(1f, rms * 12f)
         level += (target - level) * if (target > level) 0.5f else 0.15f
@@ -87,35 +97,67 @@ class MicButtonView(context: Context) : View(context) {
             canvas.drawCircle(cx, cy, buttonRadius + dp(3f) + level * (haloMax - dp(3f)), halo)
         }
 
-        fill.color = when (state) {
-            State.RECORDING -> 0xFFE5484D.toInt()
-            else -> 0xF01C1924.toInt()
-        }
+        fill.color = if (state == State.RECORDING) 0xFFE5484D.toInt() else 0xF01C1924.toInt()
         canvas.drawCircle(cx, cy, buttonRadius, fill)
 
-        if (state == State.TRANSCRIBING) {
-            val r = buttonRadius - dp(6f)
-            rect.set(cx - r, cy - r, cx + r, cy + r)
-            canvas.drawArc(rect, angle, 100f, false, spinner)
-            canvas.drawArc(rect, angle + 180f, 100f, false, spinner)
-        } else {
-            drawMic(canvas, cx, cy)
+        val tallest = MurmurMark.arches[0].height
+        MurmurMark.arches.forEachIndexed { i, arch ->
+            heights[i] = when (state) {
+                State.IDLE -> arch.height
+                State.RECORDING -> arch.height + (tallest - arch.height) * level
+                State.TRANSCRIBING -> arch.height * (1f + 0.3f * sin(phase - i * 1.1f))
+            }
         }
-    }
+        val color = if (state == State.RECORDING) 0xFFFFFFFF.toInt() else MurmurMark.COLOR
+        val fade = if (state == State.RECORDING) MurmurMark.FADE + (1f - MurmurMark.FADE) * level else MurmurMark.FADE
+        mark.shader = MurmurMark.gradient(color, fade)
 
-    private fun drawMic(canvas: Canvas, cx: Float, cy: Float) {
-        // Capsule
-        rect.set(cx - dp(4f), cy - dp(9f), cx + dp(4f), cy + dp(3f))
-        canvas.drawRoundRect(rect, dp(4f), dp(4f), glyph)
-        // Cradle
-        rect.set(cx - dp(7f), cy - dp(5f), cx + dp(7f), cy + dp(6f))
-        canvas.drawArc(rect, 0f, 180f, false, glyphStroke)
-        // Stem
-        canvas.drawLine(cx, cy + dp(6f), cx, cy + dp(9.5f), glyphStroke)
+        val scale = dp(19f) / MurmurMark.WIDTH
+        canvas.withSave {
+            translate(cx, cy)
+            scale(scale, scale)
+            translate(-MurmurMark.CENTER_X, -MurmurMark.CENTER_Y)
+            MurmurMark.buildPath(path, oval, heights)
+            drawPath(path, mark)
+        }
     }
 
     override fun onDetachedFromWindow() {
-        spin.cancel()
+        ripple.cancel()
         super.onDetachedFromWindow()
+    }
+}
+
+/** Geometry of the Murmur mark, in the 108-unit space of res/drawable/ic_launcher_foreground.xml. */
+internal object MurmurMark {
+    /** [left] edge, [width] of the arch, and [height] of its stems above the baseline. */
+    class Arch(val left: Float, val width: Float, val height: Float)
+
+    const val BASELINE = 72f
+    const val STROKE = 7f
+    const val COLOR = 0xFFC9B8FF.toInt()
+    /** Opacity of the rightmost arch; the mark fades to it from full on the left. */
+    const val FADE = 0.45f
+    val arches = listOf(Arch(32f, 16f, 26f), Arch(48f, 16f, 18f), Arch(64f, 12f, 10f))
+    const val WIDTH = 44f
+    const val CENTER_X = 54f
+    const val CENTER_Y = 55f
+
+    fun gradient(color: Int, endAlpha: Float): Shader {
+        val end = (color and 0x00FFFFFF) or ((endAlpha * 255).toInt() shl 24)
+        return LinearGradient(arches.first().left, 0f, arches.last().let { it.left + it.width }, 0f, color, end, Shader.TileMode.CLAMP)
+    }
+
+    fun buildPath(path: Path, oval: RectF, heights: FloatArray) {
+        path.reset()
+        arches.forEachIndexed { i, arch ->
+            val r = arch.width / 2
+            val top = BASELINE - heights[i]
+            path.moveTo(arch.left, BASELINE)
+            path.lineTo(arch.left, top)
+            oval.set(arch.left, top - r, arch.left + arch.width, top + r)
+            path.arcTo(oval, 180f, 180f)
+            path.lineTo(arch.left + arch.width, BASELINE)
+        }
     }
 }

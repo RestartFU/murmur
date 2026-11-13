@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Murmur only needs to know when a keyboard window is on screen (to place the mic
+  Murmur only needs to know when a keyboard window is on screen (to place the
   button above it) and which text field has focus (to keep the button clear of
   it and to insert the transcript).
 -->

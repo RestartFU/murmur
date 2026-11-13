@@ -1,6 +1,13 @@
 package com.restartfu.murmur.screenshots
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.res.painterResource
+import com.restartfu.murmur.R
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.getValue
@@ -89,6 +96,8 @@ class Screenshots {
     )
 
     @Test fun setupReady() = setup("setup-ready", true, true, ModelManager.State.Installed)
+
+    @Test fun brand() = capture("brand") { Brand() }
 
     @Test fun overlayIdle() = overlay("overlay-idle", MicButtonView.State.IDLE)
 
@@ -233,4 +242,64 @@ private fun androidx.compose.foundation.layout.RowScope.Key(text: String, color:
         Modifier.weight(weight).fillMaxSize().background(color, RoundedCornerShape(6.dp)),
         contentAlignment = Alignment.Center,
     ) { Text(text, color = label, fontSize = 18.sp) }
+}
+
+/** The launcher icon under a few launcher masks, and the button in each state, enlarged. */
+@Composable
+private fun Brand() {
+    val bg = Color(0xFFF2F0F7)
+    Column(
+        Modifier.fillMaxSize().background(bg).padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Spacer(Modifier.height(24.dp))
+        Text("Launcher icon", fontSize = 15.sp, color = Color(0xFF49454F))
+        Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
+            LauncherIcon(CircleShape, 112.dp)
+            LauncherIcon(RoundedCornerShape(30.dp), 112.dp)
+            // Themed (monochrome) icon on Android 13+
+            Box(
+                Modifier.size(112.dp).clip(CircleShape).background(Color(0xFFDCE1FF)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Image(
+                    painterResource(R.drawable.ic_launcher_foreground), null,
+                    colorFilter = ColorFilter.tint(Color(0xFF1F3269)),
+                    modifier = Modifier.requiredSize(112.dp * 108 / 72),
+                )
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            listOf(48.dp, 40.dp, 32.dp).forEach { LauncherIcon(CircleShape, it) }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("Dictation button: idle, recording, transcribing", fontSize = 15.sp, color = Color(0xFF49454F))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(MicButtonView.State.IDLE, MicButtonView.State.RECORDING, MicButtonView.State.TRANSCRIBING).forEach { st ->
+                Box(Modifier.size(120.dp), contentAlignment = Alignment.Center) {
+                    AndroidView(
+                        factory = { ctx ->
+                            MicButtonView(ctx).apply {
+                                state = st
+                                if (st == MicButtonView.State.RECORDING) repeat(12) { setLevel(0.04f) }
+                            }
+                        },
+                        modifier = Modifier.scale(1.8f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LauncherIcon(shape: androidx.compose.ui.graphics.Shape, size: Dp) {
+    // Adaptive icons are 108dp with the visible area being the middle 72dp.
+    Box(Modifier.size(size).clip(shape).background(Color(0xFF17141F)), contentAlignment = Alignment.Center) {
+        Image(
+            painterResource(R.drawable.ic_launcher_foreground), null,
+            modifier = Modifier.requiredSize(size * 108 / 72),
+        )
+    }
 }

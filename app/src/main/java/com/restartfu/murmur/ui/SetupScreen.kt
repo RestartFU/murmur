@@ -49,6 +49,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.restartfu.murmur.R
 import com.restartfu.murmur.model.ModelManager
+import com.restartfu.murmur.overlay.OverlayController
 import com.restartfu.murmur.service.MurmurAccessibilityService
 
 @Composable
@@ -56,12 +57,14 @@ fun SetupScreen() {
     val context = LocalContext.current
     var micGranted by remember { mutableStateOf(false) }
     var serviceEnabled by remember { mutableStateOf(false) }
+    var customPosition by remember { mutableStateOf(false) }
     val model by ModelManager.state.collectAsStateWithLifecycle()
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         micGranted = context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
         serviceEnabled = MurmurAccessibilityService.isEnabled(context)
+        customPosition = OverlayController.hasCustomPosition(context)
         ModelManager.refresh(context)
     }
 
@@ -87,7 +90,12 @@ fun SetupScreen() {
             downloadModel = { ModelManager.download(context) },
             cancelDownload = { ModelManager.cancel(context) },
             deleteModel = { ModelManager.delete(context) },
+            resetButtonPosition = {
+                OverlayController.resetPosition(context)
+                customPosition = false
+            },
         ),
+        customPosition = customPosition,
     )
 }
 
@@ -97,6 +105,7 @@ class SetupActions(
     val downloadModel: () -> Unit = {},
     val cancelDownload: () -> Unit = {},
     val deleteModel: () -> Unit = {},
+    val resetButtonPosition: () -> Unit = {},
 )
 
 /** The setup screen without any system wiring, so every state can be previewed. */
@@ -106,6 +115,7 @@ fun SetupContent(
     serviceEnabled: Boolean,
     model: ModelManager.State,
     actions: SetupActions,
+    customPosition: Boolean = false,
 ) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
@@ -117,7 +127,7 @@ fun SetupContent(
         ) {
             Text("Murmur", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.SemiBold)
             Text(
-                "Talk instead of typing, in any app. A mic button appears above your keyboard; " +
+                "Talk instead of typing, in any app. The Murmur button appears above your keyboard; " +
                     "tap it, speak, tap again. Speech is recognised on your phone in 25 languages.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -125,7 +135,7 @@ fun SetupContent(
             Spacer(Modifier.height(4.dp))
 
             Step(1, "Microphone", done = micGranted) {
-                Text("Murmur only listens while the mic button is red.")
+                Text("Murmur only listens while its button is red.")
                 if (!micGranted) {
                     Button(onClick = actions.allowMic) {
                         Text("Allow microphone")
@@ -137,10 +147,10 @@ fun SetupContent(
                 ModelStep(model, actions)
             }
 
-            Step(3, "Show the mic above your keyboard", done = serviceEnabled) {
+            Step(3, "Show Murmur above your keyboard", done = serviceEnabled) {
                 Text(
                     "Murmur uses Android's accessibility service to see when a keyboard is open, " +
-                        "place the mic button above it, and type your words into the focused text field. " +
+                        "place its button above it, and type your words into the focused text field. " +
                         "It does not read, store or send your screen contents or what you type, and " +
                         "nothing leaves your phone.",
                 )
@@ -161,9 +171,17 @@ fun SetupContent(
                     value = text,
                     onValueChange = { text = it },
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Tap here, then tap the mic above the keyboard") },
+                    placeholder = { Text("Tap here, then tap the Murmur button above the keyboard") },
                     minLines = 3,
                 )
+                Text(
+                    "Drag the button to move it anywhere above the keyboard.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (customPosition) {
+                    TextButton(onClick = actions.resetButtonPosition) { Text("Reset button position") }
+                }
             }
 
             Text(
@@ -232,7 +250,7 @@ private fun Step(
                     modifier = Modifier.padding(start = 12.dp).weight(1f),
                 )
                 if (number == 4) {
-                    Icon(painterResource(R.drawable.ic_mic), contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Icon(painterResource(R.drawable.ic_murmur), contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 }
             }
             if (!(done && showDone) || number == 2) content()

@@ -11,25 +11,27 @@ import android.view.MotionEvent
 import android.view.ViewConfiguration
 import android.view.WindowManager
 import androidx.core.content.edit
-import kotlin.math.abs
+import kotlin.math.hypot
 
 /**
- * Owns the accessibility overlay window that holds the mic button, keeps it docked just
- * above the keyboard, and lets the user drag it sideways. The horizontal position is
- * remembered as a distance from the right edge so it survives rotation.
+ * Owns the accessibility overlay window that holds the dictation button and keeps it docked
+ * above the keyboard. The user can drag it anywhere above the keyboard. The position is
+ * remembered as distances from the right edge and from the keyboard, so it survives
+ * rotation and keyboards of different heights.
  */
 class OverlayController(
     private val service: AccessibilityService,
     private val onTap: () -> Unit,
 ) {
     private val wm = service.getSystemService(WindowManager::class.java)
-    private val prefs = service.getSharedPreferences("overlay", Context.MODE_PRIVATE)
+    private val prefs = service.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val density = service.resources.displayMetrics.density
     private val gap = (4 * density).toInt()
     private val defaultRightMargin = (8 * density).toInt()
 
     val button = MicButtonView(service)
     private var attached = false
+    private var keyboardTop = 0
 
     private val params = WindowManager.LayoutParams(
         WindowManager.LayoutParams.WRAP_CONTENT,
@@ -66,13 +68,15 @@ class OverlayController(
         val screenWidth = wm.currentWindowMetrics.bounds.width()
         val right = prefs.getInt(KEY_RIGHT_MARGIN, defaultRightMargin)
         val x = (screenWidth - size - right).coerceIn(0, (screenWidth - size).coerceAtLeast(0))
-        val y = dockY(
+        keyboardTop = keyboardBounds.top
+        val y = placeY(
             keyboardTop = keyboardBounds.top,
             fieldTop = focusedField?.top,
             fieldBottom = focusedField?.bottom,
             buttonSize = size,
             gap = gap,
             density = density,
+            aboveKeyboard = prefs.getInt(KEY_ABOVE_KEYBOARD, -1).takeIf { it >= 0 },
         )
         if (attached && params.x == x && params.y == y) return
         params.x = x
@@ -97,23 +101,33 @@ class OverlayController(
             onTap()
         }
         val slop = ViewConfiguration.get(service).scaledTouchSlop
-        var downRawX = 0f
+        var downX = 0f
+        var downY = 0f
         var startX = 0
+        var startY = 0
         var dragging = false
         button.setOnTouchListener { v, e ->
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    downRawX = e.rawX
+                    downX = e.rawX
+                    downY = e.rawY
                     startX = params.x
+                    startY = params.y
                     dragging = false
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = e.rawX - downRawX
-                    if (!dragging && abs(dx) > slop) dragging = true
+                    val dx = e.rawX - downX
+                    val dy = e.rawY - downY
+                    if (!dragging && hypot(dx, dy) > slop) {
+                        dragging = true
+                        v.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                    }
                     if (dragging && attached) {
                         val screenWidth = wm.currentWindowMetrics.bounds.width()
-                        params.x = (startX + dx.toInt()).coerceIn(0, screenWidth - v.width)
+                        params.x = (startX + dx.toInt()).coerceIn(0, (screenWidth - v.width).coerceAtLeast(0))
+                        // Anywhere above the keyboard, never on top of it.
+                        params.y = (startY + dy.toInt()).coerceIn(0, (keyboardTop - v.height).coerceAtLeast(0))
                         wm.updateViewLayout(button, params)
                     }
                     true
@@ -121,7 +135,10 @@ class OverlayController(
                 MotionEvent.ACTION_UP -> {
                     if (dragging) {
                         val screenWidth = wm.currentWindowMetrics.bounds.width()
-                        prefs.edit { putInt(KEY_RIGHT_MARGIN, screenWidth - v.width - params.x) }
+                        prefs.edit {
+                            putInt(KEY_RIGHT_MARGIN, screenWidth - v.width - params.x)
+                            putInt(KEY_ABOVE_KEYBOARD, keyboardTop - v.height - params.y)
+                        }
                     } else {
                         v.performClick()
                     }
@@ -134,7 +151,33 @@ class OverlayController(
     }
 
     companion object {
+        private const val PREFS = "overlay"
         private const val KEY_RIGHT_MARGIN = "right_margin"
+        private const val KEY_ABOVE_KEYBOARD = "above_keyboard"
+
+        /** Forgets where the user dragged the button; it docks automatically again. */
+        fun resetPosition(context: Context) =
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { clear() }
+
+        fun hasCustomPosition(context: Context) =
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).all.isNotEmpty()
+
+        /**
+         * The top edge of the button window, in screen pixels: where the user dragged it
+         * ([aboveKeyboard] = gap between button and keyboard), or [dockY] if they never did.
+         */
+        internal fun placeY(
+            keyboardTop: Int,
+            fieldTop: Int?,
+            fieldBottom: Int?,
+            buttonSize: Int,
+            gap: Int,
+            density: Float,
+            aboveKeyboard: Int?,
+        ): Int {
+            if (aboveKeyboard == null) return dockY(keyboardTop, fieldTop, fieldBottom, buttonSize, gap, density)
+            return (keyboardTop - buttonSize - aboveKeyboard).coerceIn(0, (keyboardTop - buttonSize).coerceAtLeast(0))
+        }
 
         /** How far above the keyboard a field may end and still count as "sitting on" it. */
         private const val FIELD_NEAR_KEYBOARD_DP = 96

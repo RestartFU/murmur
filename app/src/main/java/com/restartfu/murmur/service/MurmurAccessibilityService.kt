@@ -27,7 +27,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
- * Watches for a keyboard window, docks the mic button above it, records on tap,
+ * Watches for a keyboard window, docks the dictation button above it, records on tap,
  * transcribes with Parakeet and types the result into the focused field.
  *
  * Microphone access works without a foreground service: the system binds accessibility
